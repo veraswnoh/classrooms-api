@@ -1,0 +1,14 @@
+{
+  "name": "classrooms-api",
+  "scripts": {
+    "dev": "bun run --hot src/index.ts"
+  },
+  "dependencies": {
+    "@types/node": "^22.10.1",
+    "hono": "^4.6.12",
+    "prisma": "^6.0.1"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}
