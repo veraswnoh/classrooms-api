@@ -14,9 +14,115 @@ datasource db {
 }
 
 model Account {
-  id          Int         @id @default(autoincrement())
+  id          Int             @id @default(autoincrement())
   first_name  String  
   last_name   String
-  username    String      @unique
+  username    String          @unique
   password    String
+  role        Role            @default(STUDENT)
+  assessments Assessment[]
+  attendances Attendance[]
+  enrolments  Enrolment[]
+  payments    Payment[]
+}
+
+model Course {
+  id          Int             @id @default(autoincrement())
+  name        String          @unique
+  code        String          @unique
+  type        CourseType      @default(IN_PERSON)
+  classes     Class[]
+  enrolments  Enrolment[]
+}
+
+model Class {
+  id          Int             @id @default(autoincrement())
+  name        String          @unique
+  course      Course          @relation(fields: [courseId], references: [id])
+  courseId    Int
+  lessons     Lesson[]
+}
+
+model Lesson {
+  id          Int             @id @default(autoincrement())
+  name        String          @unique
+  class       Class           @relation(fields: [classId], references: [id])
+  classId     Int
+  assessments Assessment[]
+  attendance  Attendance[]
+}
+
+model Attendance {
+  id          Int             @id @default(autoincrement())
+  account     Account         @relation(fields: [accountId], references: [id])
+  accountId   Int
+  lesson      Lesson          @relation(fields: [lessonId], references: [id])
+  lessonId    Int
+  type        AttendanceType  @default(ABSENT)
+
+}
+
+model Enrolment {
+  id          Int             @id @default(autoincrement())
+  account     Account         @relation(fields: [accountId], references: [id])
+  accountId   Int
+  course      Course          @relation(fields: [courseId], references: [id])
+  courseId    Int
+  date        Int
+  status      Status          @default(IN_PROGRESS)
+}
+
+model Payment {
+  id          Int             @id @default(autoincrement())
+  account     Account         @relation(fields: [accountId], references: [id])
+  accountId   Int
+  date        Int
+  amount      Int
+  method      Method          @default(E_TRANSFER)
+}
+
+model Assessment {
+  id          Int             @id @default(autoincrement())
+  type        AssessmentType
+  account     Account         @relation(fields: [accountId], references: [id])
+  accountId   Int
+  lesson      Lesson          @relation(fields: [lessonId], references: [id])
+  lessonId    Int
+  score       Int
+  feedback    String
+}
+
+enum Role {
+  STUDENT
+  TEACHER
+}
+
+enum CourseType {
+  IN_PERSON
+  ONLINE_VIRTUAL
+}
+
+enum AttendanceType {
+  ABSENT 
+  TARDY
+  PRESENT
+  EXCUSED
+}
+
+enum AssessmentType {
+  QUIZ
+  ASSIGNMENT
+  TEST
+  EXAM
+}
+
+enum Status { 
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum Method {
+  E_TRANSFER
+  CREDIT_CARD
+  CASH
 }
