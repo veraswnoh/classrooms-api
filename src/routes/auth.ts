@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, Context } from "hono";
 import prisma from "../utils/db";
 import { sign } from "hono/jwt";
 import { z } from "zod";
@@ -8,15 +8,39 @@ import { verify } from "hono/jwt";
 
 const app = new Hono();
 
+interface CustomContext extends Context {
+  set(key: "authUser", value: any): void;
+  get(key: "authUser"): any;
+  // Add other methods and properties as needed
+}
+
 const credentialsSchema = z.object({
   username: z.string().min(1, "Username is required."),
   password: z.string().min(1, "Password is required."),
 });
 
 const accountCreationSchema = z.object({
-  password: z.string().min(1, "Password is required."),
-  first_name: z.string().min(1, "First name is required."),
-  last_name: z.string().min(1, "Last name is required."),
+  password: z
+    .string({ required_error: "Password is required." })
+    .min(8, "Password needs to be at least 8 characters.")
+    .refine((val) => /[A-Z]/.test(val), {
+      message: "Password must contain at least one uppercase letter.",
+    })
+    .refine((val) => /[a-z]/.test(val), {
+      message: "Password must contain at least one lowercase letter.",
+    })
+    .refine((val) => /[0-9]/.test(val), {
+      message: "Password must contain at least one number.",
+    })
+    .refine((val) => /[!@#$%^&*(),.?":{}|<>]/.test(val), {
+      message: "Password must contain at least one special character.",
+    }),
+  first_name: z
+    .string({ required_error: "First name is required." })
+    .min(3, "First name needs to be at least 3 characters."),
+  last_name: z
+    .string({ required_error: "Last name is required." })
+    .min(2, "Last name needs to be at least 2 characters."),
   role: z
     .string({ required_error: "Role is required." })
     .transform((val) => val.toUpperCase() as Role)
@@ -25,9 +49,28 @@ const accountCreationSchema = z.object({
     }),
 });
 
+const updatePasswordSchema = z.object({
+  password: z.string().min(1, "Password is required."),
+  new_password: z
+    .string({ required_error: "Password is required." })
+    .min(8, "Password needs to be at least 8 characters.")
+    .refine((val) => /[A-Z]/.test(val), {
+      message: "Password must contain at least one uppercase letter.",
+    })
+    .refine((val) => /[a-z]/.test(val), {
+      message: "Password must contain at least one lowercase letter.",
+    })
+    .refine((val) => /[0-9]/.test(val), {
+      message: "Password must contain at least one number.",
+    })
+    .refine((val) => /[!@#$%^&*(),.?":{}|<>]/.test(val), {
+      message: "Password must contain at least one special character.",
+    }),
+});
+
 // Custom middleware to verify token from cookie
 export const verifyTokenFromCookie = async (
-  c: any,
+  c: CustomContext,
   next: () => Promise<void>
 ) => {
   const token = getCookie(c, "token");
@@ -55,7 +98,7 @@ export const verifyTokenFromCookie = async (
   }
 };
 
-const checkRole = async (c: any, next: () => Promise<void>) => {
+const checkRole = async (c: CustomContext, next: () => Promise<void>) => {
   try {
     const user = c.get("authUser");
 
@@ -250,32 +293,9 @@ app.post("/create_account", verifyTokenFromCookie, checkRole, async (c) => {
   }
 });
 
-app.get("/me", async (c) => {
-  const token = getCookie(c, "token");
-
-  if (!token) {
-    return c.json(
-      {
-        message: "You are not signed in.",
-      },
-      401
-    );
-  }
-
+app.get("/me", verifyTokenFromCookie, async (c: CustomContext) => {
   try {
-    const payload = await verify(token, Bun.env.AUTH_SECRET || "missingsecret");
-
-    const user = await prisma.account.findFirst({
-      where: {
-        username: (payload as { username: string }).username,
-      },
-      select: {
-        first_name: true,
-        last_name: true,
-        username: true,
-        role: true,
-      },
-    });
+    const user = c.get("authUser");
 
     return c.json(user, 200);
   } catch (e) {
@@ -295,6 +315,81 @@ app.get("/logout", async (c) => {
     return c.json({
       message: "Logged out successfully!",
     });
+  } catch (e) {
+    return c.json<{ message: string }>(
+      {
+        message: e instanceof Error ? e.message : "Unknown error occurred.",
+      },
+      401
+    );
+  }
+});
+
+app.put("/update_password", verifyTokenFromCookie, async (c: CustomContext) => {
+  try {
+    const user = c.get("authUser");
+
+    const parsed = await updatePasswordSchema.safeParseAsync(
+      await c.req.json()
+    );
+
+    if (!parsed.success) {
+      return c.json(
+        {
+          message: parsed.error.issues
+            .map((issue) => {
+              return issue.message;
+            })
+            .join(" "),
+        },
+        400
+      );
+    }
+
+    const { password, new_password } = parsed.data;
+
+    if (password === new_password) {
+      return c.json(
+        {
+          message: "New password cannot be the same as your current password.",
+        },
+        400
+      );
+    }
+
+    const accountPassword = await prisma.account.findFirst({
+      where: {
+        username: user.username,
+      },
+      select: {
+        password: true,
+      },
+    });
+
+    if (password !== accountPassword?.password) {
+      return c.json(
+        {
+          message: "Incorrect password.",
+        },
+        401
+      );
+    }
+
+    await prisma.account.update({
+      where: {
+        username: user.username,
+      },
+      data: {
+        password: new_password,
+      },
+    });
+
+    return c.json(
+      {
+        message: "Password updated successfully!",
+      },
+      200
+    );
   } catch (e) {
     return c.json<{ message: string }>(
       {
