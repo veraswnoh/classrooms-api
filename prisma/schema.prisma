@@ -95,6 +95,7 @@ model Assessment {
 enum Role {
   STUDENT
   TEACHER
+  ADMIN
 }
 
 enum CourseType {
